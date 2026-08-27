@@ -1,0 +1,30 @@
+{
+  "name": "codex-quota-hud",
+  "version": "0.1.0+codex.20260827021240",
+  "description": "Shows a local black-and-green quota HUD only while Codex is in use.",
+  "author": {
+    "name": "Local developer"
+  },
+  "keywords": [
+    "codex",
+    "quota",
+    "hud",
+    "rate-limits"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Quota HUD",
+    "shortDescription": "Show weekly Codex quota only while Codex has focus.",
+    "longDescription": "Starts a small black-and-green Windows HUD at Codex session start. The HUD automatically hides when you switch away from Codex and reappears when you return, then reads rate limits through the local Codex CLI App Server.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Interactive"
+    ],
+    "brandColor": "#20FF7A",
+    "defaultPrompt": [
+      "Start my Codex quota HUD."
+    ]
+  }
+}

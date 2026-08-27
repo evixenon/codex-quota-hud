@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/session_start.py\"",
+            "statusMessage": "Starting Codex quota HUD"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/session_end.py\"",
+            "statusMessage": "Stopping Codex quota HUD",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
