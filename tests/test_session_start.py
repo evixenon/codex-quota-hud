@@ -74,26 +74,25 @@ class SessionStartTests(unittest.TestCase):
 
             popen.assert_not_called()
 
-    def test_session_end_uses_the_same_shared_pid_file(self) -> None:
+    def test_session_end_keeps_the_shared_hud_alive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory)
             shared_pid_file = home / ".codex-quota-hud" / "hud.json"
             shared_pid_file.parent.mkdir()
             shared_pid_file.write_text(json.dumps({"pid": 31415}), encoding="utf-8")
 
-            with (
-                patch.object(session_end.Path, "home", return_value=home),
-                patch.dict(
-                    os.environ,
-                    {"PLUGIN_DATA": str(home / "session-b")},
-                    clear=False,
-                ),
-                patch.object(session_end.subprocess, "run") as run,
+            with patch.dict(
+                os.environ,
+                {"PLUGIN_DATA": str(home / "session-b")},
+                clear=False,
             ):
                 session_end.main()
 
-            run.assert_called_once()
-            self.assertFalse(shared_pid_file.exists())
+            self.assertTrue(shared_pid_file.exists())
+            self.assertEqual(
+                json.loads(shared_pid_file.read_text(encoding="utf-8")),
+                {"pid": 31415},
+            )
 
 
 if __name__ == "__main__":
