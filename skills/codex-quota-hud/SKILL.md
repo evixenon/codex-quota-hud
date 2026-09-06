@@ -11,7 +11,9 @@ running so session recycling does not make it disappear. While it is running, th
 foreground window: it appears for Codex (or its ChatGPT desktop host) and hides
 when focus moves to another app. The HUD displays the longest available
 rate-limit window as the weekly-style quota and formats the reset countdown as
-`5d20h`.
+`5d20h`. Double-clicking the HUD or using its context menu toggles a compact
+one-line mode that shows the quota and absolute reset time for the next window
+to reset.
 
 If the HUD does not appear, review and trust the plugin hook definition with
 `/hooks`, confirm that Python with Tkinter is installed, and verify that

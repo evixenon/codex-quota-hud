@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 from hooks import session_start
 from hud.codex_hud import HudInstanceGuard
@@ -23,12 +24,14 @@ class HudInstanceGuardTests(unittest.TestCase):
             second.close()
 
     def test_session_start_detects_the_hud_mutex(self) -> None:
-        guard = HudInstanceGuard()
-        try:
-            self.assertTrue(guard.acquire())
-            self.assertTrue(session_start._hud_is_running())
-        finally:
-            guard.close()
+        name = f"Local\\CodexQuotaHudStartTest-{os.getpid()}"
+        guard = HudInstanceGuard(name)
+        with patch.object(session_start, "HUD_MUTEX_NAME", name):
+            try:
+                self.assertTrue(guard.acquire())
+                self.assertTrue(session_start._hud_is_running())
+            finally:
+                guard.close()
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@ from typing import Any, Optional
 APP_VERSION = "0.1.0"
 REFRESH_SECONDS = 90
 WINDOW_WIDTH = 250
-WINDOW_HEIGHT = 182
+FULL_WINDOW_HEIGHT = 182
+COMPACT_WINDOW_HEIGHT = 38
 WINDOW_RIGHT_MARGIN = 20
 WINDOW_BOTTOM_MARGIN = 16
 QUOTA_LABEL_LEFT_PADDING = 10
@@ -254,6 +255,53 @@ def format_reset_at(timestamp: Optional[int], *, weekly: bool) -> str:
         reset_at.weekday()
     ]
     return f"{weekday}{reset_at:%H}"
+
+
+def select_next_reset_window(
+    snapshot: Optional[UsageSnapshot], *, now: Optional[int] = None
+) -> Optional[tuple[str, bool, QuotaWindow]]:
+    """Return the quota window with the nearest upcoming reset."""
+
+    if snapshot is None:
+        return None
+
+    candidates = [
+        ("5H", False, snapshot.five_hour),
+        ("7D", True, snapshot.weekly),
+    ]
+    available = [candidate for candidate in candidates if candidate[2] is not None]
+    if not available:
+        return None
+
+    current_time = int(time.time()) if now is None else now
+    upcoming = [
+        candidate
+        for candidate in available
+        if candidate[2].resets_at is not None
+        and candidate[2].resets_at >= current_time
+    ]
+    if upcoming:
+        return min(upcoming, key=lambda candidate: candidate[2].resets_at or 0)
+
+    # Prefer the short window when reset timestamps are missing or stale.
+    return available[0]
+
+
+def format_compact_status(
+    snapshot: Optional[UsageSnapshot], *, now: Optional[int] = None
+) -> tuple[str, Optional[int]]:
+    """Format the one-line quota and reset-at status."""
+
+    selected = select_next_reset_window(snapshot, now=now)
+    if selected is None:
+        return "QUOTA --  RESET --", None
+
+    prefix, weekly, window = selected
+    reset_at = format_reset_at(window.resets_at, weekly=weekly)
+    return (
+        f"{prefix} {window.remaining_percent:3d}%  RESET {reset_at}",
+        window.remaining_percent,
+    )
 
 
 def snapshot_from_rate_limit_result(
@@ -547,27 +595,28 @@ class Hud:
         self._drag_origin: Optional[tuple[int, int]] = None
         self._foreground_monitor = CodexForegroundMonitor()
         self._visible = True
+        self._compact = False
 
         root.title("Codex quota HUD")
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         root.attributes("-alpha", 0.8)
         root.configure(bg=COLORS["background"])
-        root.geometry(self._default_geometry())
+        root.geometry(self._default_geometry(FULL_WINDOW_HEIGHT))
 
-        outer = tk.Frame(
+        self.outer = tk.Frame(
             root,
             bg=COLORS["background"],
             highlightbackground=COLORS["border"],
             highlightthickness=1,
         )
-        outer.pack(fill="both", expand=True)
+        self.outer.pack(fill="both", expand=True)
 
-        header = tk.Frame(outer, bg=COLORS["background"], height=24)
-        header.pack(fill="x", padx=12, pady=(8, 0))
-        header.pack_propagate(False)
+        self.header = tk.Frame(self.outer, bg=COLORS["background"], height=24)
+        self.header.pack(fill="x", padx=12, pady=(8, 0))
+        self.header.pack_propagate(False)
         self.title_label = tk.Label(
-            header,
+            self.header,
             text="CODEX // 5H + WEEKLY",
             bg=COLORS["background"],
             fg=COLORS["normal"],
@@ -575,7 +624,7 @@ class Hud:
         )
         self.title_label.pack(side="left")
         close = tk.Label(
-            header,
+            self.header,
             text="×",
             bg=COLORS["background"],
             fg=COLORS["muted"],
@@ -585,11 +634,11 @@ class Hud:
         close.pack(side="right")
         close.bind("<Button-1>", lambda _event: self.close())
 
-        body = tk.Frame(outer, bg=COLORS["background"])
-        body.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.body = tk.Frame(self.outer, bg=COLORS["background"])
+        self.body.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
         self.battery_canvas = tk.Canvas(
-            body,
+            self.body,
             width=214,
             height=58,
             bg=COLORS["background"],
@@ -599,7 +648,7 @@ class Hud:
         self.battery_canvas.pack(fill="x")
 
         self.five_hour_label = tk.Label(
-            body,
+            self.body,
             text="5H  --",
             bg=COLORS["background"],
             fg=COLORS["normal"],
@@ -611,7 +660,7 @@ class Hud:
         )
 
         self.weekly_label = tk.Label(
-            body,
+            self.body,
             text="7D  --",
             bg=COLORS["background"],
             fg=COLORS["normal"],
@@ -623,7 +672,7 @@ class Hud:
         )
 
         self.status_label = tk.Label(
-            outer,
+            self.outer,
             text="CONNECTING...",
             bg=COLORS["background"],
             fg=COLORS["muted"],
@@ -632,18 +681,29 @@ class Hud:
         )
         self.status_label.pack(fill="x", padx=12, pady=(0, 5))
 
+        self.compact_label = tk.Label(
+            self.outer,
+            text="QUOTA --  RESET --",
+            bg=COLORS["background"],
+            fg=COLORS["disabled"],
+            font=("Consolas", 11, "bold"),
+            anchor="center",
+        )
+
         for widget in (
-            outer,
-            header,
+            self.outer,
+            self.header,
             self.title_label,
-            body,
+            self.body,
             self.battery_canvas,
             self.five_hour_label,
             self.weekly_label,
             self.status_label,
+            self.compact_label,
         ):
             widget.bind("<ButtonPress-1>", self._start_drag)
             widget.bind("<B1-Motion>", self._drag)
+            widget.bind("<Double-Button-1>", lambda _event: self.toggle_mode())
 
         root.bind("<Escape>", lambda _event: self.close())
         root.bind_all("<Button-3>", self._show_menu)
@@ -652,7 +712,7 @@ class Hud:
         self._watch_foreground_window()
         self.refresh()
 
-    def _default_geometry(self) -> str:
+    def _default_geometry(self, height: int) -> str:
         self.root.update_idletasks()
         work_area = Win32Rect()
         user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -674,8 +734,8 @@ class Hud:
             work_bottom = self.root.winfo_screenheight()
 
         x = max(0, work_right - WINDOW_WIDTH - WINDOW_RIGHT_MARGIN)
-        y = max(0, work_bottom - WINDOW_HEIGHT - WINDOW_BOTTOM_MARGIN)
-        return f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}+{x}+{y}"
+        y = max(0, work_bottom - height - WINDOW_BOTTOM_MARGIN)
+        return f"{WINDOW_WIDTH}x{height}+{x}+{y}"
 
     def _start_drag(self, event: tk.Event) -> None:
         self._drag_origin = (event.x_root, event.y_root)
@@ -691,9 +751,38 @@ class Hud:
 
     def _show_menu(self, event: tk.Event) -> None:
         menu = tk.Menu(self.root, tearoff=False)
+        menu.add_command(
+            label="切换到完整模式" if self._compact else "切换到单行模式",
+            command=self.toggle_mode,
+        )
         menu.add_command(label="立即刷新", command=self.refresh)
         menu.add_command(label="关闭", command=self.close)
         menu.tk_popup(event.x_root, event.y_root)
+
+    def toggle_mode(self) -> None:
+        """Switch between the full HUD and the one-line status."""
+
+        old_height = COMPACT_WINDOW_HEIGHT if self._compact else FULL_WINDOW_HEIGHT
+        self._compact = not self._compact
+        new_height = COMPACT_WINDOW_HEIGHT if self._compact else FULL_WINDOW_HEIGHT
+
+        self.root.update_idletasks()
+        x = self.root.winfo_x()
+        y = self.root.winfo_y() + old_height - new_height
+
+        if self._compact:
+            self.header.pack_forget()
+            self.body.pack_forget()
+            self.status_label.pack_forget()
+            self.compact_label.pack(fill="both", expand=True, padx=10, pady=5)
+        else:
+            self.compact_label.pack_forget()
+            self.header.pack(fill="x", padx=12, pady=(8, 0))
+            self.body.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+            self.status_label.pack(fill="x", padx=12, pady=(0, 5))
+
+        self.root.geometry(f"{WINDOW_WIDTH}x{new_height}+{max(0, x)}+{max(0, y)}")
+        self._update_reset_text()
 
     def refresh(self) -> None:
         if self._refresh_in_flight:
@@ -827,6 +916,12 @@ class Hud:
                 ),
                 fg=self._quota_color(window.remaining_percent),
             )
+
+        compact_text, compact_percent = format_compact_status(self.snapshot)
+        self.compact_label.configure(
+            text=compact_text,
+            fg=self._quota_color(compact_percent),
+        )
 
     def _schedule_countdown(self) -> None:
         self._update_reset_text()
