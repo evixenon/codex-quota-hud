@@ -13,16 +13,11 @@ from hooks import session_end, session_start
 
 
 class SessionStartTests(unittest.TestCase):
-    def test_current_process_is_alive(self) -> None:
-        """Windows must not use os.kill(pid, 0) as its process probe."""
-        self.assertTrue(session_start._alive(os.getpid()))
-
     def test_existing_hud_mutex_prevents_another_launch(self) -> None:
-        """A stale PID file must not bypass the process-wide HUD guard."""
+        """The process-wide HUD guard must prevent another launch."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory)
             with (
-                patch.object(session_start.Path, "home", return_value=home),
                 patch.dict(
                     os.environ,
                     {"PLUGIN_ROOT": str(home)},
@@ -41,19 +36,17 @@ class SessionStartTests(unittest.TestCase):
 
             popen.assert_not_called()
 
-    def test_second_session_reuses_living_hud_from_shared_data_dir(self) -> None:
-        """A session-specific PLUGIN_DATA path must not bypass the process guard."""
+    def test_stale_pid_file_does_not_block_launch(self) -> None:
+        """A dead HUD's PID record must not be used as a Windows process probe."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory)
-            existing_pid = 31415
             shared_pid_file = home / ".codex-quota-hud" / "hud.json"
             shared_pid_file.parent.mkdir()
             shared_pid_file.write_text(
-                json.dumps({"pid": existing_pid}), encoding="utf-8"
+                json.dumps({"pid": 31415}), encoding="utf-8"
             )
 
             with (
-                patch.object(session_start.Path, "home", return_value=home),
                 patch.dict(
                     os.environ,
                     {
@@ -64,15 +57,20 @@ class SessionStartTests(unittest.TestCase):
                 ),
                 patch.object(
                     session_start,
-                    "_alive",
-                    side_effect=lambda pid: pid == existing_pid,
+                    "_hud_is_running",
+                    return_value=False,
+                ),
+                patch.object(
+                    session_start.os,
+                    "kill",
+                    side_effect=AssertionError("os.kill must not probe stale HUD PIDs"),
                 ),
                 patch.object(session_start.subprocess, "Popen") as popen,
             ):
                 popen.return_value.pid = 27182
                 session_start.main()
 
-            popen.assert_not_called()
+            popen.assert_called_once()
 
     def test_session_end_keeps_the_shared_hud_alive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

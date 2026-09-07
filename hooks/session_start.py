@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import json
 import os
 import subprocess
 import sys
@@ -14,33 +13,6 @@ from pathlib import Path
 HUD_MUTEX_NAME = r"Local\CodexQuotaHud"
 SYNCHRONIZE = 0x00100000
 ERROR_FILE_NOT_FOUND = 2
-
-
-def _data_dir() -> Path:
-    # PLUGIN_DATA is scoped to a Codex session. A user-scoped path lets every
-    # session discover the same detached HUD process.
-    path = Path.home() / ".codex-quota-hud"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _read_pid(path: Path) -> int | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        pid = payload.get("pid")
-        return pid if isinstance(pid, int) and pid > 0 else None
-    except (OSError, ValueError):
-        return None
-
-
-def _alive(pid: int | None) -> bool:
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except (OSError, ProcessLookupError):
-        return False
-    return True
 
 
 def _hud_is_running() -> bool:
@@ -71,9 +43,9 @@ def main() -> None:
 
     plugin_root = Path(os.environ["PLUGIN_ROOT"])
     hud_script = plugin_root / "hud" / "codex_hud.py"
-    pid_file = _data_dir() / "hud.json"
-    old_pid = _read_pid(pid_file)
-    if _hud_is_running() or _alive(old_pid):
+    # The HUD mutex is authoritative. Its PID file may survive a crash, and
+    # os.kill(pid, 0) is not a reliable existence probe on Windows.
+    if _hud_is_running():
         return
 
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(

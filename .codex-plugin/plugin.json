@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-hud",
-  "version": "0.1.0+codex.20260906162420",
+  "version": "0.1.0+codex.20260907115234",
   "description": "Shows a local black-and-green quota HUD only while Codex is in use.",
   "author": {
     "name": "Local developer"
