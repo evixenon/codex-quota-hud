@@ -7,9 +7,8 @@ description: Explain and troubleshoot the local Codex quota HUD plugin.
 
 This plugin starts or reuses the detached Windows HUD through Codex
 `SessionStart`. Its `SessionEnd` hook intentionally leaves the shared HUD
-running so session recycling does not make it disappear. While it is running, the HUD watches the Windows
-foreground window: it appears for Codex (or its ChatGPT desktop host) and hides
-when focus moves to another app. The HUD displays the longest available
+running so session recycling does not make it disappear. Once started, the HUD
+stays visible and always on top when focus moves to other apps. The HUD displays the longest available
 rate-limit window as the weekly-style quota and formats the reset countdown as
 `5d20h`. Double-clicking the HUD or using its context menu toggles a compact
 one-line mode that shows the quota and absolute reset time for the next window

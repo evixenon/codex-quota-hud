@@ -33,7 +33,6 @@ COMPACT_WINDOW_HEIGHT = 38
 WINDOW_RIGHT_MARGIN = 20
 WINDOW_BOTTOM_MARGIN = 16
 QUOTA_LABEL_LEFT_PADDING = 10
-FOREGROUND_POLL_MILLISECONDS = 250
 
 SPI_GETWORKAREA = 0x0030
 HUD_MUTEX_NAME = r"Local\CodexQuotaHud"
@@ -47,12 +46,6 @@ class Win32Rect(ctypes.Structure):
         ("right", wintypes.LONG),
         ("bottom", wintypes.LONG),
     ]
-
-# The desktop product can be hosted by either Codex itself or the ChatGPT
-# desktop shell. Window-title matching makes this resilient to launcher and
-# packaging differences.
-CODEX_HOST_PROCESS_NAMES = {"codex", "chatgpt"}
-CODEX_TITLE_MARKERS = ("codex",)
 
 # Edit these values to change the visual style without touching the data code.
 COLORS = {
@@ -136,95 +129,6 @@ def _hud_pid_file() -> Path:
     data_dir = Path.home() / ".codex-quota-hud"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir / "hud.json"
-
-
-class CodexForegroundMonitor:
-    """Detect whether the foreground Windows window belongs to Codex.
-
-    This uses only Win32 window/process metadata. It does not inspect Codex
-    conversations, account data, browser storage, or window contents.
-    """
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-
-    def __init__(self) -> None:
-        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
-        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-        self.user32.GetForegroundWindow.restype = wintypes.HWND
-        self.user32.GetWindowThreadProcessId.argtypes = [
-            wintypes.HWND,
-            ctypes.POINTER(wintypes.DWORD),
-        ]
-        self.user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
-        self.user32.GetWindowTextLengthW.restype = ctypes.c_int
-        self.user32.GetWindowTextW.argtypes = [
-            wintypes.HWND,
-            wintypes.LPWSTR,
-            ctypes.c_int,
-        ]
-        self.user32.GetWindowTextW.restype = ctypes.c_int
-
-        self.kernel32.OpenProcess.argtypes = [
-            wintypes.DWORD,
-            wintypes.BOOL,
-            wintypes.DWORD,
-        ]
-        self.kernel32.OpenProcess.restype = wintypes.HANDLE
-        self.kernel32.QueryFullProcessImageNameW.argtypes = [
-            wintypes.HANDLE,
-            wintypes.DWORD,
-            wintypes.LPWSTR,
-            ctypes.POINTER(wintypes.DWORD),
-        ]
-        self.kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
-        self.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        self.kernel32.CloseHandle.restype = wintypes.BOOL
-
-    @staticmethod
-    def _handle_value(handle: wintypes.HWND) -> int:
-        return ctypes.cast(handle, ctypes.c_void_p).value or 0
-
-    def _window_title(self, handle: wintypes.HWND) -> str:
-        length = self.user32.GetWindowTextLengthW(handle)
-        if length <= 0:
-            return ""
-        buffer = ctypes.create_unicode_buffer(length + 1)
-        self.user32.GetWindowTextW(handle, buffer, len(buffer))
-        return buffer.value
-
-    def _process_name(self, process_id: int) -> str:
-        process = self.kernel32.OpenProcess(
-            self.PROCESS_QUERY_LIMITED_INFORMATION, False, process_id
-        )
-        if not process:
-            return ""
-        try:
-            size = wintypes.DWORD(32768)
-            buffer = ctypes.create_unicode_buffer(size.value)
-            if not self.kernel32.QueryFullProcessImageNameW(
-                process, 0, buffer, ctypes.byref(size)
-            ):
-                return ""
-            return Path(buffer.value).stem.casefold()
-        finally:
-            self.kernel32.CloseHandle(process)
-
-    def codex_has_focus(self, hud_window_id: int) -> bool:
-        foreground = self.user32.GetForegroundWindow()
-        if not foreground:
-            return False
-        if self._handle_value(foreground) == hud_window_id:
-            return True
-
-        process_id = wintypes.DWORD()
-        self.user32.GetWindowThreadProcessId(foreground, ctypes.byref(process_id))
-        process_name = self._process_name(process_id.value)
-        if process_name in CODEX_HOST_PROCESS_NAMES:
-            return True
-
-        title = self._window_title(foreground).casefold()
-        return any(marker in title for marker in CODEX_TITLE_MARKERS)
 
 
 def format_reset_countdown(seconds: int) -> str:
@@ -593,8 +497,6 @@ class Hud:
         self.snapshot: Optional[UsageSnapshot] = None
         self._refresh_in_flight = False
         self._drag_origin: Optional[tuple[int, int]] = None
-        self._foreground_monitor = CodexForegroundMonitor()
-        self._visible = True
         self._compact = False
 
         root.title("Codex quota HUD")
@@ -709,7 +611,6 @@ class Hud:
         root.bind_all("<Button-3>", self._show_menu)
         self._draw_battery(None)
         self._schedule_countdown()
-        self._watch_foreground_window()
         self.refresh()
 
     def _default_geometry(self, height: int) -> str:
@@ -926,27 +827,6 @@ class Hud:
     def _schedule_countdown(self) -> None:
         self._update_reset_text()
         self.root.after(1000, self._schedule_countdown)
-
-    def _watch_foreground_window(self) -> None:
-        """Show the HUD only while Codex (or the HUD itself) is foreground."""
-
-        try:
-            should_show = self._foreground_monitor.codex_has_focus(
-                self.root.winfo_id()
-            )
-        except OSError:
-            # A transient Win32 failure should not close the HUD process.
-            should_show = self._visible
-
-        if should_show and not self._visible:
-            self.root.deiconify()
-            self.root.attributes("-topmost", True)
-            self._visible = True
-        elif not should_show and self._visible:
-            self.root.withdraw()
-            self._visible = False
-
-        self.root.after(FOREGROUND_POLL_MILLISECONDS, self._watch_foreground_window)
 
     def close(self) -> None:
         self.client.close()

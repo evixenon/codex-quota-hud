@@ -1,7 +1,7 @@
 {
   "name": "codex-quota-hud",
   "version": "0.1.0+codex.20260907115234",
-  "description": "Shows a local black-and-green quota HUD only while Codex is in use.",
+  "description": "Shows an always-visible local black-and-green Codex quota HUD.",
   "author": {
     "name": "Local developer"
   },
@@ -14,8 +14,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Quota HUD",
-    "shortDescription": "Show weekly Codex quota only while Codex has focus.",
-    "longDescription": "Starts a black-and-green Windows quota HUD with full and compact one-line modes. It hides when you switch away from Codex, reappears when you return, and reads rate limits through the local Codex CLI App Server.",
+    "shortDescription": "Keep Codex quota visible in an always-on-top HUD.",
+    "longDescription": "Starts an always-visible black-and-green Windows quota HUD with full and compact one-line modes. It stays on top when you switch apps and reads rate limits through the local Codex CLI App Server.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [

@@ -3,7 +3,7 @@
 这是一个 Codex 本地插件版本：
 
 - Codex `SessionStart` 时启动黑底荧光绿的本地 HUD；
-- HUD 跨 Codex 会话复用；`SessionEnd` 不会关闭 HUD；
+- HUD 启动后持续置顶显示，并跨 Codex 会话复用；`SessionEnd` 不会关闭 HUD；
 - HUD 通过本机 `codex app-server` 的只读 `account/rateLimits/read` 读取最长额度窗口；
 - 倒计时只显示 `5d20h`、`20h15m` 或 `45m` 这样的纯格式。
 - 双击 HUD 或使用右键菜单可在完整模式和单行模式之间切换；单行模式只显示下一次最先重置窗口的剩余额度与重置时刻。
@@ -29,4 +29,4 @@ codex plugin add codex-quota-hud@personal
 
 ## 说明
 
-这里的“打开 Codex”对应 Codex 会话生命周期，而不是桌面应用进程生命周期。HUD 是桌面级共享进程：开始一个 Codex 会话时确保它启动，主线程结束时不会关闭，因此会话重建或发送新消息不会让 HUD 消失。HUD 会在 Codex 窗口失去焦点时自动隐藏；如需彻底关闭，请手动结束 HUD 进程。
+这里的“打开 Codex”对应 Codex 会话生命周期，而不是桌面应用进程生命周期。HUD 是桌面级共享进程：开始一个 Codex 会话时确保它启动，主线程结束时不会关闭，因此会话重建或发送新消息不会让 HUD 消失。HUD 启动后不会因切换到其他应用而隐藏；如需彻底关闭，请点击 HUD 右上角关闭按钮或手动结束 HUD 进程。
