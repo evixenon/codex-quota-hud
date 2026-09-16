@@ -30,8 +30,7 @@ REFRESH_SECONDS = 90
 WINDOW_WIDTH = 250
 FULL_WINDOW_HEIGHT = 182
 COMPACT_WINDOW_HEIGHT = 38
-WINDOW_RIGHT_MARGIN = 20
-WINDOW_BOTTOM_MARGIN = 16
+WINDOW_TOP_MARGIN = 20
 QUOTA_LABEL_LEFT_PADDING = 10
 
 SPI_GETWORKAREA = 0x0030
@@ -497,14 +496,14 @@ class Hud:
         self.snapshot: Optional[UsageSnapshot] = None
         self._refresh_in_flight = False
         self._drag_origin: Optional[tuple[int, int]] = None
-        self._compact = False
+        self._compact = True
 
         root.title("Codex quota HUD")
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         root.attributes("-alpha", 0.8)
         root.configure(bg=COLORS["background"])
-        root.geometry(self._default_geometry(FULL_WINDOW_HEIGHT))
+        root.geometry(self._default_geometry(COMPACT_WINDOW_HEIGHT))
 
         self.outer = tk.Frame(
             root,
@@ -609,6 +608,10 @@ class Hud:
 
         root.bind("<Escape>", lambda _event: self.close())
         root.bind_all("<Button-3>", self._show_menu)
+        self.header.pack_forget()
+        self.body.pack_forget()
+        self.status_label.pack_forget()
+        self.compact_label.pack(fill="both", expand=True, padx=10, pady=5)
         self._draw_battery(None)
         self._schedule_countdown()
         self.refresh()
@@ -628,14 +631,16 @@ class Hud:
         if user32.SystemParametersInfoW(
             SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0
         ):
+            work_left = work_area.left
+            work_top = work_area.top
             work_right = work_area.right
-            work_bottom = work_area.bottom
         else:
+            work_left = 0
+            work_top = 0
             work_right = self.root.winfo_screenwidth()
-            work_bottom = self.root.winfo_screenheight()
 
-        x = max(0, work_right - WINDOW_WIDTH - WINDOW_RIGHT_MARGIN)
-        y = max(0, work_bottom - height - WINDOW_BOTTOM_MARGIN)
+        x = work_left + max(0, (work_right - work_left - WINDOW_WIDTH) // 2)
+        y = work_top + WINDOW_TOP_MARGIN
         return f"{WINDOW_WIDTH}x{height}+{x}+{y}"
 
     def _start_drag(self, event: tk.Event) -> None:
@@ -663,13 +668,12 @@ class Hud:
     def toggle_mode(self) -> None:
         """Switch between the full HUD and the one-line status."""
 
-        old_height = COMPACT_WINDOW_HEIGHT if self._compact else FULL_WINDOW_HEIGHT
         self._compact = not self._compact
         new_height = COMPACT_WINDOW_HEIGHT if self._compact else FULL_WINDOW_HEIGHT
 
         self.root.update_idletasks()
         x = self.root.winfo_x()
-        y = self.root.winfo_y() + old_height - new_height
+        y = self.root.winfo_y()
 
         if self._compact:
             self.header.pack_forget()
